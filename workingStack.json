@@ -125,20 +125,6 @@
                 "ServiceRoleArn": "arn:aws:iam::554791629612:role/dae-crossaccount-codedeploy-role"
             }
         },
-        "ProdCodeDeployDeploymentGroup": {
-            "Type": "AWS::CodeDeploy::DeploymentGroup",
-            "Properties": {
-                "ApplicationName": {
-                    "Ref": "codeDeployApplication"
-                },
-                "DeploymentConfigName": "CodeDeployDefault.LambdaAllAtOnce",
-                "DeploymentStyle": {
-                    "DeploymentType": "BLUE_GREEN",
-                    "DeploymentOption": "WITH_TRAFFIC_CONTROL"
-                },
-                "ServiceRoleArn": "arn:aws:iam::554791629612:role/dae-crossaccount-codedeploy-role"
-            }
-        },
         "DeployPipeline": {
             "Type": "AWS::CodePipeline::Pipeline",
             "DependsOn": "artifactsBucket",
@@ -220,10 +206,10 @@
                         ]
                     },
                     {
-                        "Name": "NoneProdDeployment",
+                        "Name": "NoneProdDeploy",
                         "Actions": [
                             {
-                                "Name": "NoneProdDeploymentAction",
+                                "Name": "NoneProdDeployAction",
                                 "InputArtifacts": [
                                     {
                                         "Name": "CFNTemplateOutput"
@@ -241,34 +227,6 @@
                                     },
                                     "DeploymentGroupName": {
                                         "Ref": "CodeDeployDeploymentGroup"
-                                    }
-                                },
-                                "RunOrder": 1
-                            }
-                        ]
-                    },
-                    {
-                        "Name": "ProdDeployment",
-                        "Actions": [
-                            {
-                                "Name": "ProdDeploymentAction",
-                                "InputArtifacts": [
-                                    {
-                                        "Name": "CFNTemplateOutput"
-                                    }
-                                ],
-                                "ActionTypeId": {
-                                    "Category": "Deploy",
-                                    "Owner": "AWS",
-                                    "Version": 1,
-                                    "Provider": "CodeDeploy"
-                                },
-                                "Configuration": {
-                                    "ApplicationName": {
-                                        "Ref": "codeDeployApplication"
-                                    },
-                                    "DeploymentGroupName": {
-                                        "Ref": "ProdCodeDeployDeploymentGroup"
                                     }
                                 },
                                 "RunOrder": 1
