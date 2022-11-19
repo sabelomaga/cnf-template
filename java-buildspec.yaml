@@ -16,8 +16,10 @@ phases:
   post_build:
     commands:
       - echo Build completed on `date`
+      - echo zip Java project
+      - zip {project_name}.zip {project_file}.war
       - echo Copy artifact to S3 bucket
-      - aws s3 cp artifacts/${environment}/${project_name}.zip s3://{bucket-name} --acl public-read --cache-control "max-age=100"
+      - aws s3 cp ${project_name}.zip s3://{bucket-name} --acl public-read --cache-control "max-age=100"
 artifacts:
   files:
     - target/{project_name}.jar
