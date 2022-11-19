@@ -1,0 +1,26 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      java: openjdk8
+  pre_build:
+    commands:
+      - echo Test started on `date`
+      - mvn install
+      - mvn clean compile test
+  build:
+    commands:
+      - echo Build started on `date`
+      - mvn package
+      - mv target/{project_name}.war {project_file}.war
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Copy artifact to S3 bucket
+      - aws s3 cp artifacts/${environment}/${project_name}.zip s3://{bucket-name} --acl public-read --cache-control "max-age=100"
+artifacts:
+  files:
+    - target/{project_name}.jar
+    - artifacts/**/*
+    - deployment.yml
+    
