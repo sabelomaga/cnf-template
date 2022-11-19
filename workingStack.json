@@ -1,0 +1,288 @@
+{
+    "Description": "CI/CD using codepipeline",
+    "Parameters": {
+        "CFNTemplateRepoName": {
+            "Type": "String",
+            "Description": "Name of the repo which contains CFN template."
+        },
+        "ArtifactStoreS3Location": {
+            "Type": "String",
+            "Description": "Name of the S3 bucket to store CodePipeline artificat."
+        },
+        "lambdaFunctionName": {
+            "Type": "String",
+            "Description": "Name of the lambda function"
+        },
+        "imageName": {
+            "Type": "String",
+            "Description": "Name of image to be used by Codebuild project"
+        }
+        ,
+        "projectName": {
+            "Type": "String",
+            "Description": "Name of the C# project name"
+        }
+    },
+    "Resources": {
+        "artifactsBucket": {
+            "Type": "AWS::S3::Bucket",
+            "DeletionPolicy": "Retain",
+            "Properties": {
+                "BucketName": {
+                    "Ref": "ArtifactStoreS3Location"
+                }
+            }
+        },
+        "codebuildTestingProject": {
+            "Type": "AWS::CodeBuild::Project",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "BuildCopyCFN-${AWS::StackName}"
+                },
+                "Description": "Build to run tests",
+                "ServiceRole": "arn:aws:iam::554791629612:role/dae-codebuild-role",
+                "Artifacts": {
+                    "Type": "S3",
+                    "Location": {
+                        "Ref": "ArtifactStoreS3Location"
+                    },
+                    "Name": {
+                        "Fn::Sub": "BuildCopyCFN-${AWS::StackName}"
+                    }
+                },
+                "Environment": {
+                    "Type": "LINUX_CONTAINER",
+                    "ComputeType": "BUILD_GENERAL1_LARGE",
+                    "Image":{
+                        "Ref": "imageName"
+                    },
+                    "EnvironmentVariables": [
+                        {
+                            "Name": "TEMPLATE_BUCKET",
+                            "Value": {
+                                "Ref": "ArtifactStoreS3Location"
+                            }
+                        },
+                        {
+                            "Name": "TEMPLATE_PREFIX",
+                            "Value": "codebuild"
+                        },
+                        {
+                            "Name": "environment",
+                            "Value": "nonprod"
+                        },
+                        {
+                            "Name": "project_name",
+                            "Value": {
+                                "Ref": "projectName"
+                            }
+                        }
+                    ]
+                },
+                "VpcConfig": {
+                    "VpcId": "vpc-0d1acbe9dcec98c78",
+                    "Subnets": [ "subnet-0494d0334903b6505", "subnet-00330af49e6d69bdd"],
+                    "SecurityGroupIds":  ["sg-06a8b2a0534d55f3f"]
+                },
+                "Source": {
+                    "Location": {
+                        "Fn::Sub": "https://git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${CFNTemplateRepoName}"
+                    },
+                    "Type": "CODECOMMIT",
+                    "BuildSpec": "buildspec.yaml"
+                },
+                "TimeoutInMinutes": 15,
+                "EncryptionKey": {
+                    "Fn::Sub": "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "BuildCopyCFN-${AWS::StackName}"
+                        }
+                    }
+                ]
+            }
+        },
+        "codeDeployApplication": {
+            "Type": "AWS::CodeDeploy::Application",
+            "Properties": {
+                "ComputePlatform": "Lambda"
+            }
+        },
+        "CodeDeployDeploymentGroup": {
+            "Type": "AWS::CodeDeploy::DeploymentGroup",
+            "Properties": {
+                "ApplicationName": {
+                    "Ref": "codeDeployApplication"
+                },
+                "DeploymentConfigName": "CodeDeployDefault.LambdaAllAtOnce",
+                "DeploymentStyle": {
+                    "DeploymentType": "BLUE_GREEN",
+                    "DeploymentOption": "WITH_TRAFFIC_CONTROL"
+                },
+                "ServiceRoleArn": "arn:aws:iam::554791629612:role/dae-crossaccount-codedeploy-role"
+            }
+        },
+        "ProdCodeDeployDeploymentGroup": {
+            "Type": "AWS::CodeDeploy::DeploymentGroup",
+            "Properties": {
+                "ApplicationName": {
+                    "Ref": "codeDeployApplication"
+                },
+                "DeploymentConfigName": "CodeDeployDefault.LambdaAllAtOnce",
+                "DeploymentStyle": {
+                    "DeploymentType": "BLUE_GREEN",
+                    "DeploymentOption": "WITH_TRAFFIC_CONTROL"
+                },
+                "ServiceRoleArn": "arn:aws:iam::554791629612:role/dae-crossaccount-codedeploy-role"
+            }
+        },
+        "DeployPipeline": {
+            "Type": "AWS::CodePipeline::Pipeline",
+            "DependsOn": "artifactsBucket",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "ContinuousDeliveryNestedCFN-${AWS::StackName}"
+                },
+                "RoleArn": "arn:aws:iam::554791629612:role/dae-codepipeline-role",
+                "Stages": [
+                    {
+                        "Name": "Source",
+                        "Actions": [
+                            {
+                                "Name": "Source",
+                                "ActionTypeId": {
+                                    "Category": "Source",
+                                    "Owner": "AWS",
+                                    "Version": 1,
+                                    "Provider": "CodeCommit"
+                                },
+                                "OutputArtifacts": [
+                                    {
+                                        "Name": "CFNTemplateOutput"
+                                    }
+                                ],
+                                "Configuration": {
+                                    "BranchName": "master",
+                                    "RepositoryName": {
+                                        "Ref": "CFNTemplateRepoName"
+                                    }
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "Test",
+                        "Actions": [
+                            {
+                                "Name": "Test",
+                                "InputArtifacts": [
+                                    {
+                                        "Name": "CFNTemplateOutput"
+                                    }
+                                ],
+                                "ActionTypeId": {
+                                    "Category": "Build",
+                                    "Owner": "AWS",
+                                    "Version": 1,
+                                    "Provider": "CodeBuild"
+                                },
+                                "OutputArtifacts": [
+                                    {
+                                        "Name": "CFNTemplateArtifact"
+                                    }
+                                ],
+                                "Configuration": {
+                                    "ProjectName": {
+                                        "Ref": "codebuildTestingProject"
+                                    }
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "Approval",
+                        "Actions": [
+                            {
+                                "Name": "ManualApproval",
+                                "ActionTypeId": {
+                                    "Category": "Approval",
+                                    "Owner": "AWS",
+                                    "Version": 1,
+                                    "Provider": "Manual"
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "NoneProdDeployment",
+                        "Actions": [
+                            {
+                                "Name": "NoneProdDeploymentAction",
+                                "InputArtifacts": [
+                                    {
+                                        "Name": "CFNTemplateOutput"
+                                    }
+                                ],
+                                "ActionTypeId": {
+                                    "Category": "Deploy",
+                                    "Owner": "AWS",
+                                    "Version": 1,
+                                    "Provider": "CodeDeploy"
+                                },
+                                "Configuration": {
+                                    "ApplicationName": {
+                                        "Ref": "codeDeployApplication"
+                                    },
+                                    "DeploymentGroupName": {
+                                        "Ref": "CodeDeployDeploymentGroup"
+                                    }
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "ProdDeployment",
+                        "Actions": [
+                            {
+                                "Name": "ProdDeploymentAction",
+                                "InputArtifacts": [
+                                    {
+                                        "Name": "CFNTemplateOutput"
+                                    }
+                                ],
+                                "ActionTypeId": {
+                                    "Category": "Deploy",
+                                    "Owner": "AWS",
+                                    "Version": 1,
+                                    "Provider": "CodeDeploy"
+                                },
+                                "Configuration": {
+                                    "ApplicationName": {
+                                        "Ref": "codeDeployApplication"
+                                    },
+                                    "DeploymentGroupName": {
+                                        "Ref": "ProdCodeDeployDeploymentGroup"
+                                    }
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    }
+                ],
+                "ArtifactStore": {
+                    "Type": "S3",
+                    "Location": {
+                        "Ref": "ArtifactStoreS3Location"
+                    }
+                }
+            }
+        }
+    }
+}
